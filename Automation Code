@@ -1,0 +1,204 @@
+# Script to automatically generate PDFs from an ArcGIS Pro Layout
+# Converted from ArcMap script
+# Last updated: 11/25/2025
+
+import arcpy
+import re
+import os
+
+# --- User-defined variables ---
+# !! SET THESE VALUES BEFORE RUNNING !!
+LAYOUT_NAME = "TOPOGRAPHIC"  # The name of your layout in the Pro project
+MAP_FRAME_NAME = "Topographic Map Frame" # The name of the map frame element in your layout
+# ------------------------------
+
+# Helper function: find correct TEXT_ELEMENT to alter in layout
+def find_TEXT_ELEMENT(elm_list, srch):
+    """
+    Finds a text element by searching its .text content.
+    elm_list: A list of text elements from layout.listElements()
+    srch: The string to search for (e.g., "YEAR")
+    """
+    for i in elm_list:
+        if re.search(srch, i.text):
+            return i
+    return None # Return None if not found
+
+# Helper function: change source element based on info in file name
+def change_src(elm, name):
+    split = re.split('_', name)
+    if re.search("TopoView", str(split)):
+        elm.text = "Source: USGS TopoView"
+    elif re.search("TNM", str(split)):
+        elm.text = "Source: The National Map"
+    elif re.search("HTMC", str(split)):
+        elm.text = "Source: Historic Topographic Map Collection"
+    elif re.search("TM", str(split)):
+        elm.text = "Source: Thematic Mapper"
+    elif re.search("earthexplorer.", str(split)):
+        elm.text = "Source: USGS Earth Explorer"
+    elif re.search("tnris", str(split)) or re.search("TNRIS", str(split)):
+        elm.text = "Source: TNRIS"
+    elif re.search("txdot", str(split)) or re.search("TXDOT", str(split)):
+        elm.text = "Source: TXDOT"
+    elif re.search("htme", str(split)) or re.search("HTME", str(split)):
+        elm.text = "Source: USGS Historical Topographic Map Explorer"
+    elif re.search("txu-pclmaps.", str(split)) or re.search("txu-pclmap.", str(split)):
+        elm.text = "Source: UT Perry-Castañeda Library Map Collection"
+    else:
+        elm.text = "Source: ADD CORRECT SOURCE"
+        print("add new source") # Python 3 print
+
+# Refactored function: Gets new scale and series string from layer name
+def get_series_and_scale(lyr_name):
+    """
+    Parses layer name to find scale, returns a new map scale and a series string.
+    Returns (None, None) if scale not found.
+    """
+    foo = re.findall('(\d{5,6})', lyr_name)
+    if not foo:
+        return None, None
+        
+    scale_str = str(foo[0])
+    
+    # Determine new map scale
+    new_scale = 12000 # Default
+    if scale_str == "62500":
+        new_scale = 24000
+    elif scale_str == "50000":
+        new_scale = 24000
+    elif scale_str == "250000":
+        new_scale = 48000
+    elif scale_str == "125000":
+        new_scale = 48000
+    elif scale_str == "100000":
+        new_scale = 48000
+    
+    # Determine series string
+    series_dict = {
+        "24000": "7.5",
+        "25000": "7.5",
+        "31680": "7.5",
+        "50000": "15",
+        "62500": "15",
+        "100000": "30 x 30",
+        "125000": "30 x 30",
+        "250000": "30 x 30"
+    }
+    
+    series_string = series_dict.get(scale_str) # Use .get() to avoid KeyError
+    
+    return new_scale, series_string
+
+# --- Main Script Logic ---
+
+print("Starting PDF generation...")
+
+# Pro: Get the current ArcGIS Pro project
+p = arcpy.mp.ArcGISProject("CURRENT")
+
+# Pro: Get the specified layout from the project
+try:
+    layout = p.listLayouts(LAYOUT_NAME)[0]
+except IndexError:
+    print(f"ERROR: Layout '{LAYOUT_NAME}' not found. Please check LAYOUT_NAME variable.")
+    exit()
+
+# Pro: Get the text elements from the layout
+elm = layout.listElements(element_type="TEXT_ELEMENT")
+
+# Pro: Get the specified map frame from the layout
+try:
+    mf = layout.listElements(element_type="MAPFRAME_ELEMENT", wildcard=MAP_FRAME_NAME)[0]
+except IndexError:
+    print(f"ERROR: Map Frame '{MAP_FRAME_NAME}' not found. Please check MAP_FRAME_NAME variable.")
+    exit()
+
+# Pro: Get the map that the map frame is pointing to
+m = mf.map
+
+# Find the text elements to modify
+year_txt_elem = find_TEXT_ELEMENT(elm, "YEAR")
+topo_txt_elem = find_TEXT_ELEMENT(elm,"Topographic Series")
+src_txt_elem = find_TEXT_ELEMENT(elm, "Source:")
+
+# Check if elements were found
+if not all([year_txt_elem, topo_txt_elem, src_txt_elem]):
+    print("ERROR: Could not find one or more required text elements (YEAR, Topographic Series, Source:).")
+    print("Exiting.")
+    exit()
+
+rst_txt = year_txt_elem.text # Save original text to reset later
+
+# Pro: Iterate through layers in the map (not the layout)
+for lyr in m.listLayers():
+    
+    # Check if layer name looks like a raster. Flag (?i) is moved to the start.
+    if re.search('(?i)([^\\s]+(\\.(jpe?g|png|gif|bmp|tif|tiff|sid))$)', lyr.name):
+        
+        # Parse layer name for year
+        try:
+            yr_src = re.split('_', lyr.name)[0:2]
+            quad_yr = re.split('-', yr_src[1])
+            if len(quad_yr) > 1:
+                year_txt_elem.text = str(quad_yr[0]) + ' ' + str(quad_yr[1]) + ", " + str(yr_src[0])
+            else:
+                year_txt_elem.text = str(yr_src[1]) + ", " + str(yr_src[0])
+        except IndexError:
+            print(f"Could not parse year from layer name: {lyr.name}. Skipping year update.")
+            year_txt_elem.text = "YEAR" # Or some default
+        
+        # Get scale and series info
+        new_map_scale, scale_series_str = get_series_and_scale(lyr.name)
+        
+        # If scale/series not found, skip this layer
+        if new_map_scale is None or scale_series_str is None:
+            print(f"Could not determine scale/series for {lyr.name}. Skipping.")
+            continue
+            
+        # Pro: Set the map frame's scale using the camera
+        mf.camera.scale = new_map_scale
+        
+        # Update text elements
+        topo_txt_elem.text = "USGS " + scale_series_str + " Minute Topographic Series"
+        change_src(src_txt_elem, lyr.name)
+        
+        # --- Print status (using Python 3 print() function) ---
+        print(f"\nProcessing: {lyr.name}...")
+        print(src_txt_elem.text)
+        print(topo_txt_elem.text)
+        print(year_txt_elem.text)
+        # --------------------------------------------------------
+        
+        lyr.visible = True
+        
+        # Pro: Export the layout to PDF. Use os.path.join for safety.
+        # Create a valid PDF file name (e.g., remove extension)
+        pdf_name = os.path.splitext(lyr.name)[0] + ".pdf"
+        pdf_path = os.path.join(os.getcwd(), pdf_name)
+        
+        # Pro: Export with High Quality Settings
+        print(f"Exporting to: {pdf_path}")
+        layout.exportToPDF(
+            out_pdf=pdf_path,
+            resolution=150,                 # DPI: 300 is standard print quality (use 600 for archival)
+            image_quality="BEST",           # Resamples rasters at the highest quality
+            compress_vector_graphics=True,  # Compresses vectors without losing quality
+            image_compression="DEFLATE",    # Lossless compression (no JPEG artifacts)
+            embed_fonts=True,               # Ensures fonts display correctly on all devices
+            georef_info=True,               # Retains coordinate data (GeoPDF)
+            layers_attributes="LAYERS_ONLY" # Allows turning layers on/off in Acrobat
+        )        
+
+        print("...done")
+        lyr.visible = False
+    else:
+        print(f"Skipping layer '{lyr.name}' (does not match image file pattern).")
+
+# Reset the year text element to its original value
+year_txt_elem.text = rst_txt
+
+# Pro: Clean up project variable (optional, but good practice)
+del p
+
+print("Finished")
