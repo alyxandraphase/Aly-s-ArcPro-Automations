@@ -1,0 +1,106 @@
+# Updated Aerial Export Script
+# Fix: Ensures "Subject Property" stays visible during all exports
+# Updated Map Frame Name to "PE HISTORIC AERIAL LIBRARY Map Frame"
+
+import arcpy
+import os
+import re
+
+# --- User-defined variables ---
+LAYOUT_NAME = "AERIAL-PE-INDEXES" 
+MAP_FRAME_NAME = "PE HISTORIC AERIAL LIBRARY Map Frame"
+SUBJECT_LAYER_NAME = "Subject Property" 
+# ------------------------------
+
+def find_TEXT_ELEMENT(elm_list, srch):
+    for i in elm_list:
+        if re.search(srch, i.text):
+            return i
+    return None
+
+def format_aerial_text(lyr_name):
+    match = re.match(r'^(\d{4})\s+(.+)', lyr_name)
+    if not match:
+        return None
+        
+    year = match.group(1)
+    source = match.group(2).strip() 
+    
+    if re.search("(?i)Nearmap", source):
+        return f"{year} {source} Aerial Imagery"
+    else:
+        return f"{year} {source} Aerial Photograph"
+
+# --- Main Script Logic ---
+
+print("Starting Aerial PDF generation...")
+
+p = arcpy.mp.ArcGISProject("CURRENT")
+
+try:
+    layout = p.listLayouts(LAYOUT_NAME)[0]
+    mf = layout.listElements(element_type="MAPFRAME_ELEMENT", wildcard=MAP_FRAME_NAME)[0]
+    m = mf.map
+    aerial_txt_elem = find_TEXT_ELEMENT(layout.listElements(element_type="TEXT_ELEMENT"), "YEAR")
+except IndexError:
+    print(f"ERROR: Layout or Map Frame not found. Check variables.")
+    exit()
+
+rst_txt = aerial_txt_elem.text 
+
+# --- PRE-PROCESS: Reset layer visibility ---
+print("Resetting layer visibility (Keeping Subject Property ON)...")
+for lyr in m.listLayers():
+    if not lyr.isGroupLayer:
+        # If the layer is the Subject Property, make sure it is ON
+        if lyr.name == SUBJECT_LAYER_NAME:
+            lyr.visible = True
+        else:
+            # Turn off everything else to ensure a clean background for each aerial
+            lyr.visible = False
+
+# --- Main Export Loop ---
+for lyr in m.listLayers():
+    
+    if lyr.isGroupLayer:
+        continue
+        
+    # Skip excluded groups and the Subject Property layer itself from being treated as an aerial
+    if any(x in lyr.longName for x in ["County Indexes", "Add Subject Above", SUBJECT_LAYER_NAME]):
+        continue
+
+    formatted_text = format_aerial_text(lyr.name)
+    
+    if formatted_text:
+        # Update layout text
+        aerial_txt_elem.text = formatted_text
+        print(f"\nProcessing: {lyr.name}...")
+        
+        # Turn the specific aerial layer ON (Subject Property is already ON from pre-process)
+        lyr.visible = True
+        
+        pdf_name = os.path.splitext(lyr.name)[0] + ".pdf"
+        pdf_path = os.path.join(os.getcwd(), pdf_name)
+        
+        # Export with your requested graphics settings
+        layout.exportToPDF(
+            out_pdf=pdf_path,
+            resolution=400,
+            image_quality="BETTER",
+            compress_vector_graphics=True,
+            image_compression="ADAPTIVE",
+            jpeg_compression_quality=85,
+            embed_fonts=True,
+            georef_info=True,
+            layers_attributes="LAYERS_ONLY"
+        )        
+
+        print("...done")
+        
+        # Turn the aerial layer OFF so the next one doesn't overlap
+        lyr.visible = False
+
+# Reset layout text to template
+aerial_txt_elem.text = rst_txt
+del p
+print("Finished")
