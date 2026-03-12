@@ -85,7 +85,7 @@ for lyr in m.listLayers():
         # Export with your requested graphics settings
         layout.exportToPDF(
             out_pdf=pdf_path,
-            resolution=400,
+            resolution=150,
             image_quality="BETTER",
             compress_vector_graphics=True,
             image_compression="ADAPTIVE",
