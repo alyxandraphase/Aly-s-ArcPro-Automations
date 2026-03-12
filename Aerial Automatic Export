@@ -1,6 +1,7 @@
-# Updated Aerial Export Script
-# Fix: Ensures "Subject Property" stays visible during all exports
-# Updated Map Frame Name to "PE HISTORIC AERIAL LIBRARY Map Frame"
+# Script to automatically generate PDFs from an ArcGIS Pro Layout for Aerial Images
+# Features automatic text updates for Year and Source based on layer names
+# Detects "CIR" to change Subject Property to Yellow, reverts to Red otherwise
+# Automatically skips the "County Indexes" group
 
 import arcpy
 import os
@@ -9,55 +10,84 @@ import re
 # --- User-defined variables ---
 LAYOUT_NAME = "AERIAL-PE-INDEXES" 
 MAP_FRAME_NAME = "PE HISTORIC AERIAL LIBRARY Map Frame"
-SUBJECT_LAYER_NAME = "Subject Property" 
+SUBJECT_LAYER_NAME = "Subject Property"
 # ------------------------------
 
 def find_TEXT_ELEMENT(elm_list, srch):
+    """ Finds a text element by searching its .text content (case-insensitive). """
     for i in elm_list:
-        if re.search(srch, i.text):
+        if re.search(srch, i.text, re.IGNORECASE):
             return i
     return None
 
 def format_aerial_text(lyr_name):
+    """ Parses 'YYYY Source', removes 'CIR' tag, and appends Aerial suffix. """
     match = re.match(r'^(\d{4})\s+(.+)', lyr_name)
     if not match:
         return None
         
     year = match.group(1)
-    source = match.group(2).strip() 
+    source = match.group(2).strip()
     
-    if re.search("(?i)Nearmap", source):
-        return f"{year} {source} Aerial Imagery"
+    # Clean "CIR" out of the text label
+    clean_source = re.sub(r'(?i)\bCIR\b', '', source).strip()
+    clean_source = " ".join(clean_source.split())
+    
+    if re.search("(?i)Nearmap", clean_source):
+        return f"{year} {clean_source} Aerial Imagery"
     else:
-        return f"{year} {source} Aerial Photograph"
+        return f"{year} {clean_source} Aerial Photograph"
+
+def update_subject_symbology(map_obj, is_cir):
+    """ 
+    Updates Subject Property color: 
+    If is_cir is True -> Yellow
+    If is_cir is False -> Red
+    """
+    try:
+        lyr = map_obj.listLayers(SUBJECT_LAYER_NAME)[0]
+        cim_lyr = lyr.getDefinition('V3')
+        
+        # RGB Colors: [Red, Green, Blue, Alpha]
+        yellow = [255, 255, 0, 100] 
+        red = [255, 0, 0, 100]
+        
+        # This is the logic that switches it back to red!
+        target_color = yellow if is_cir else red
+        
+        # Update symbol layers within the CIM
+        for symbol_layer in cim_lyr.renderer.symbol.symbol.symbolLayers:
+            if hasattr(symbol_layer, 'color'):
+                symbol_layer.color.values = target_color
+        
+        lyr.setDefinition(cim_lyr)
+    except Exception as e:
+        print(f"Note: Symbology update skipped: {e}")
 
 # --- Main Script Logic ---
 
 print("Starting Aerial PDF generation...")
-
 p = arcpy.mp.ArcGISProject("CURRENT")
 
 try:
     layout = p.listLayouts(LAYOUT_NAME)[0]
-    mf = layout.listElements(element_type="MAPFRAME_ELEMENT", wildcard=MAP_FRAME_NAME)[0]
+    mf = layout.listElements("MAPFRAME_ELEMENT", wildcard=MAP_FRAME_NAME)[0]
     m = mf.map
-    aerial_txt_elem = find_TEXT_ELEMENT(layout.listElements(element_type="TEXT_ELEMENT"), "YEAR")
+    aerial_txt_elem = find_TEXT_ELEMENT(layout.listElements("TEXT_ELEMENT"), "YEAR")
+    
+    if not aerial_txt_elem:
+        print("ERROR: Could not find text element containing 'YEAR'.")
+        exit()
 except IndexError:
-    print(f"ERROR: Layout or Map Frame not found. Check variables.")
+    print("ERROR: Layout or Map Frame names are incorrect. Check variables at top.")
     exit()
 
 rst_txt = aerial_txt_elem.text 
 
-# --- PRE-PROCESS: Reset layer visibility ---
-print("Resetting layer visibility (Keeping Subject Property ON)...")
+# Reset layer visibility initially (Keep Subject Property ON)
 for lyr in m.listLayers():
     if not lyr.isGroupLayer:
-        # If the layer is the Subject Property, make sure it is ON
-        if lyr.name == SUBJECT_LAYER_NAME:
-            lyr.visible = True
-        else:
-            # Turn off everything else to ensure a clean background for each aerial
-            lyr.visible = False
+        lyr.visible = True if lyr.name == SUBJECT_LAYER_NAME else False
 
 # --- Main Export Loop ---
 for lyr in m.listLayers():
@@ -65,42 +95,52 @@ for lyr in m.listLayers():
     if lyr.isGroupLayer:
         continue
         
-    # Skip excluded groups and the Subject Property layer itself from being treated as an aerial
-    if any(x in lyr.longName for x in ["County Indexes", "Add Subject Above", SUBJECT_LAYER_NAME]):
+    # Skip groups and the Subject Property layer itself
+    if "County Indexes" in lyr.longName or lyr.name == SUBJECT_LAYER_NAME:
         continue
 
     formatted_text = format_aerial_text(lyr.name)
     
     if formatted_text:
-        # Update layout text
-        aerial_txt_elem.text = formatted_text
-        print(f"\nProcessing: {lyr.name}...")
+        # 1. Detect CIR and update symbology (This handles Red AND Yellow)
+        is_cir = "CIR" in lyr.name.upper()
+        update_subject_symbology(m, is_cir)
         
-        # Turn the specific aerial layer ON (Subject Property is already ON from pre-process)
+        # 2. Update Layout Text
+        aerial_txt_elem.text = formatted_text
+        
+        print(f"\nProcessing: {lyr.name}...")
+        print(f"CIR Mode: {is_cir} (Setting color to {'Yellow' if is_cir else 'Red'})")
+        
         lyr.visible = True
         
-        pdf_name = os.path.splitext(lyr.name)[0] + ".pdf"
+        # 3. Create PDF filename (stripping CIR)
+        clean_pdf_name = re.sub(r'(?i)\bCIR\b', '', lyr.name).strip()
+        clean_pdf_name = " ".join(clean_pdf_name.split())
+        pdf_name = os.path.splitext(clean_pdf_name)[0] + ".pdf"
         pdf_path = os.path.join(os.getcwd(), pdf_name)
         
-        # Export with your requested graphics settings
+        # 4. Export
         layout.exportToPDF(
             out_pdf=pdf_path,
-            resolution=150,
+            resolution=400,
             image_quality="BETTER",
             compress_vector_graphics=True,
             image_compression="ADAPTIVE",
             jpeg_compression_quality=85,
-            embed_fonts=True,
-            georef_info=True,
-            layers_attributes="LAYERS_ONLY"
+            georef_info=True
         )        
 
-        print("...done")
-        
-        # Turn the aerial layer OFF so the next one doesn't overlap
+        print(f"Exported: {pdf_name}")
         lyr.visible = False
 
-# Reset layout text to template
+# --- FINAL RESET ---
+# 1. Restore the text element to original value
 aerial_txt_elem.text = rst_txt
+
+# 2. Force the Subject Property back to RED one last time
+print("\nFinalizing: Resetting Subject Property to Red...")
+update_subject_symbology(m, False)
+
 del p
 print("Finished")
