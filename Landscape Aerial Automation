@@ -39,24 +39,26 @@ def format_aerial_text(lyr_name):
     else:
         return f"{year} {clean_source} Aerial Photograph"
 
-def update_subject_symbology(map_obj, subject_lyr_name, is_cir):
+def update_subject_symbology(map_obj, is_cir):
     """ 
-    Updates Subject Property outline color specifically.
-    Bypasses Fill layers to keep the center hollow.
+    Updates Subject Property color: 
+    If is_cir is True -> Yellow
+    If is_cir is False -> Red
     """
     try:
-        lyr = map_obj.listLayers(subject_lyr_name)[0]
+        lyr = map_obj.listLayers(SUBJECT_LAYER_NAME)[0]
         cim_lyr = lyr.getDefinition('V3')
         
         # RGB Colors: [Red, Green, Blue, Alpha]
         yellow = [255, 255, 0, 100] 
         red = [255, 0, 0, 100]
         
+        # This is the logic that switches it back to red!
         target_color = yellow if is_cir else red
         
-        # Update ONLY Stroke layers within the CIM to avoid filling the polygon
+        # Update symbol layers within the CIM
         for symbol_layer in cim_lyr.renderer.symbol.symbol.symbolLayers:
-            if hasattr(symbol_layer, 'color') and "Stroke" in symbol_layer.__class__.__name__:
+            if hasattr(symbol_layer, 'color'):
                 symbol_layer.color.values = target_color
         
         lyr.setDefinition(cim_lyr)
