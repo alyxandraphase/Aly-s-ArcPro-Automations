@@ -11,7 +11,11 @@ import re
 LAYOUT_NAME = "AERIAL-INDEX-LANDSCAPE" 
 MAP_FRAME_NAME = "PEI  HISTORICAL AERIAL RESOURCES Map Frame"
 # Added more options for subject property detection
-SUBJECT_LAYER_OPTIONS = ["Subject Property"]
+SUBJECT_LAYER_OPTIONS = [
+    "Subject Property",
+    "Subject",
+    "SubjectProperty"
+]
 # ------------------------------
 
 def find_TEXT_ELEMENT(elm_list, srch):
@@ -39,29 +43,27 @@ def format_aerial_text(lyr_name):
     else:
         return f"{year} {clean_source} Aerial Photograph"
 
-def update_subject_symbology(map_obj, is_cir):
+def update_subject_symbology(map_obj, layer_name, is_cir):
     """ 
     Updates Subject Property color: 
     If is_cir is True -> Yellow
     If is_cir is False -> Red
     """
     try:
-        lyr = map_obj.listLayers(SUBJECT_LAYER_NAME)[0]
+        lyr = map_obj.listLayers(layer_name)[0]
         cim_lyr = lyr.getDefinition('V3')
         
-        # RGB Colors: [Red, Green, Blue, Alpha]
-        yellow = [255, 255, 0, 100] 
+        yellow = [255, 255, 0, 100]
         red = [255, 0, 0, 100]
-        
-        # This is the logic that switches it back to red!
+
         target_color = yellow if is_cir else red
         
-        # Update symbol layers within the CIM
         for symbol_layer in cim_lyr.renderer.symbol.symbol.symbolLayers:
             if hasattr(symbol_layer, 'color'):
                 symbol_layer.color.values = target_color
         
         lyr.setDefinition(cim_lyr)
+
     except Exception as e:
         print(f"Note: Symbology update skipped: {e}")
 
