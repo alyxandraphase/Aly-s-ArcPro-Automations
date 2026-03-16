@@ -11,7 +11,7 @@ import re
 LAYOUT_NAME = "AERIAL-INDEX-LANDSCAPE" 
 MAP_FRAME_NAME = "PEI  HISTORICAL AERIAL RESOURCES Map Frame"
 # Added more options for subject property detection
-SUBJECT_LAYER_OPTIONS = ["Subject Property", "Subject", "SubjectProperty"]
+SUBJECT_LAYER_OPTIONS = ["Subject Property"]
 # ------------------------------
 
 def find_TEXT_ELEMENT(elm_list, srch):
