@@ -1,6 +1,6 @@
 # Script to automatically generate PDFs from an ArcGIS Pro Layout
 # Converted from ArcMap script
-# Last updated: 11/25/2025
+# Last updated: 03/16/2026
 # Added CIR detection and symbology toggling for Subject Property
 
 import arcpy
