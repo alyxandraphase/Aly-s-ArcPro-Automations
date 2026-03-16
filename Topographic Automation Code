@@ -1,6 +1,7 @@
 # Script to automatically generate PDFs from an ArcGIS Pro Layout
 # Converted from ArcMap script
 # Last updated: 11/25/2025
+# Added CIR detection and symbology toggling for Subject Property
 
 import arcpy
 import re
@@ -10,6 +11,7 @@ import os
 # !! SET THESE VALUES BEFORE RUNNING !!
 LAYOUT_NAME = "TOPOGRAPHIC"  # The name of your layout in the Pro project
 MAP_FRAME_NAME = "Topographic Map Frame" # The name of the map frame element in your layout
+SUBJECT_LAYER_NAME = "Subject Property"  # Used for CIR color toggling
 # ------------------------------
 
 # Helper function: find correct TEXT_ELEMENT to alter in layout
@@ -90,6 +92,28 @@ def get_series_and_scale(lyr_name):
     
     return new_scale, series_string
 
+# Helper function: Update Subject Property symbology
+def update_subject_symbology(map_obj, is_cir):
+    """ Updates Subject Property color: Yellow for CIR, Red for standard. """
+    try:
+        lyr = map_obj.listLayers(SUBJECT_LAYER_NAME)[0]
+        cim_lyr = lyr.getDefinition('V3')
+        
+        # RGB Colors: [Red, Green, Blue, Alpha]
+        yellow = [255, 255, 0, 100] 
+        red = [255, 0, 0, 100]
+        
+        target_color = yellow if is_cir else red
+        
+        # Update symbol layers within the CIM
+        for symbol_layer in cim_lyr.renderer.symbol.symbol.symbolLayers:
+            if hasattr(symbol_layer, 'color'):
+                symbol_layer.color.values = target_color
+        
+        lyr.setDefinition(cim_lyr)
+    except Exception as e:
+        print(f"Note: Symbology update skipped: {e}")
+
 # --- Main Script Logic ---
 
 print("Starting PDF generation...")
@@ -136,14 +160,28 @@ for lyr in m.listLayers():
     # Check if layer name looks like a raster. Flag (?i) is moved to the start.
     if re.search('(?i)([^\\s]+(\\.(jpe?g|png|gif|bmp|tif|tiff|sid))$)', lyr.name):
         
+        # --- CIR DETECTION & SYMBOLOGY ---
+        is_cir = "CIR" in lyr.name.upper()
+        update_subject_symbology(m, is_cir)
+        # ---------------------------------
+
         # Parse layer name for year
         try:
             yr_src = re.split('_', lyr.name)[0:2]
             quad_yr = re.split('-', yr_src[1])
             if len(quad_yr) > 1:
-                year_txt_elem.text = str(quad_yr[0]) + ' ' + str(quad_yr[1]) + ", " + str(yr_src[0])
+                raw_text = str(quad_yr[0]) + ' ' + str(quad_yr[1]) + ", " + str(yr_src[0])
             else:
-                year_txt_elem.text = str(yr_src[1]) + ", " + str(yr_src[0])
+                raw_text = str(yr_src[1]) + ", " + str(yr_src[0])
+                
+            # --- CIR LABEL CLEANUP ---
+            # Remove "CIR" from the label string so it doesn't print on the PDF
+            clean_text = re.sub(r'(?i)\bCIR\b', '', raw_text).strip()
+            clean_text = " ".join(clean_text.split()) # Clean up double spaces
+            clean_text = clean_text.strip(', -')      # Clean up trailing punctuation
+            year_txt_elem.text = clean_text
+            # -------------------------
+            
         except IndexError:
             print(f"Could not parse year from layer name: {lyr.name}. Skipping year update.")
             year_txt_elem.text = "YEAR" # Or some default
@@ -164,7 +202,7 @@ for lyr in m.listLayers():
         change_src(src_txt_elem, lyr.name)
         
         # --- Print status (using Python 3 print() function) ---
-        print(f"\nProcessing: {lyr.name}...")
+        print(f"\nProcessing: {lyr.name} (CIR Mode: {is_cir})...")
         print(src_txt_elem.text)
         print(topo_txt_elem.text)
         print(year_txt_elem.text)
@@ -173,8 +211,10 @@ for lyr in m.listLayers():
         lyr.visible = True
         
         # Pro: Export the layout to PDF. Use os.path.join for safety.
-        # Create a valid PDF file name (e.g., remove extension)
-        pdf_name = os.path.splitext(lyr.name)[0] + ".pdf"
+        # Create a valid PDF file name (remove extension and CIR)
+        clean_pdf_name = re.sub(r'(?i)\bCIR\b', '', lyr.name).strip()
+        clean_pdf_name = " ".join(clean_pdf_name.split())
+        pdf_name = os.path.splitext(clean_pdf_name)[0] + ".pdf"
         pdf_path = os.path.join(os.getcwd(), pdf_name)
         
         # Pro: Export with High Quality Settings
@@ -195,8 +235,13 @@ for lyr in m.listLayers():
     else:
         print(f"Skipping layer '{lyr.name}' (does not match image file pattern).")
 
+# --- FINAL RESET ---
 # Reset the year text element to its original value
 year_txt_elem.text = rst_txt
+
+# Force the Subject Property back to RED one last time
+print("\nFinalizing: Resetting Subject Property to Red...")
+update_subject_symbology(m, False)
 
 # Pro: Clean up project variable (optional, but good practice)
 del p
