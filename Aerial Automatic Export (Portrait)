@@ -11,7 +11,7 @@ import re
 # --- User-defined variables ---
 LAYOUT_NAME = "AERIAL-PE-INDEXES" 
 MAP_FRAME_NAME = "PE HISTORIC AERIAL LIBRARY Map Frame"
-SUBJECT_LAYER_NAME = "Subject Property"
+SUBJECT_LAYER_OPTIONS = ["Subject Property", "Subject", "SubjectProperty"]
 # ------------------------------
 
 def find_TEXT_ELEMENT(elm_list, srch):
