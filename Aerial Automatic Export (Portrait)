@@ -2,6 +2,7 @@
 # Features automatic text updates for Year and Source based on layer names
 # Detects "CIR" to change Subject Property to Yellow, reverts to Red otherwise
 # Automatically skips the "County Indexes" group
+# Updated 3/16/2026
 
 import arcpy
 import os
