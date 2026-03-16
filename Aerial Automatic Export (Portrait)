@@ -41,9 +41,8 @@ def format_aerial_text(lyr_name):
 
 def update_subject_symbology(map_obj, subject_lyr_name, is_cir):
     """ 
-    Updates Subject Property outline color: 
-    If is_cir is True -> Yellow
-    If is_cir is False -> Red
+    Updates Subject Property outline color specifically.
+    Bypasses Fill layers to keep the center hollow.
     """
     try:
         lyr = map_obj.listLayers(subject_lyr_name)[0]
@@ -55,9 +54,8 @@ def update_subject_symbology(map_obj, subject_lyr_name, is_cir):
         
         target_color = yellow if is_cir else red
         
-        # Update symbol layers within the CIM
+        # Update ONLY Stroke layers within the CIM to avoid filling the polygon
         for symbol_layer in cim_lyr.renderer.symbol.symbol.symbolLayers:
-            # Check if it has a color attribute AND is a Stroke (outline) layer
             if hasattr(symbol_layer, 'color') and "Stroke" in symbol_layer.__class__.__name__:
                 symbol_layer.color.values = target_color
         
@@ -85,43 +83,52 @@ except IndexError:
 
 rst_txt = aerial_txt_elem.text 
 
+# --- Detect which Subject Layer exists in the map ---
+active_subject_name = None
+lower_options = [opt.lower() for opt in SUBJECT_LAYER_OPTIONS]
+
+for lyr in m.listLayers():
+    if lyr.name.lower() in lower_options:
+        active_subject_name = lyr.name
+        break
+
+if not active_subject_name:
+    print(f"ERROR: Could not find any layer named {SUBJECT_LAYER_OPTIONS}")
+    exit()
+
+print(f"Using Subject Layer: {active_subject_name}")
+
 # Reset layer visibility initially (Keep Subject Property ON)
 for lyr in m.listLayers():
     if not lyr.isGroupLayer:
-        lyr.visible = True if lyr.name == SUBJECT_LAYER_NAME else False
+        lyr.visible = True if lyr.name == active_subject_name else False
 
 # --- Main Export Loop ---
 for lyr in m.listLayers():
-    
     if lyr.isGroupLayer:
         continue
         
-    # Skip groups and the Subject Property layer itself
-    if "County Indexes" in lyr.longName or lyr.name == SUBJECT_LAYER_NAME:
+    if "County Indexes" in lyr.longName or lyr.name == active_subject_name:
         continue
 
     formatted_text = format_aerial_text(lyr.name)
     
     if formatted_text:
-        # 1. Detect CIR and update symbology (This handles Red AND Yellow)
         is_cir = "CIR" in lyr.name.upper()
-        update_subject_symbology(m, is_cir)
+        # Pass all 3 arguments: Map, Layer Name, and CIR status
+        update_subject_symbology(m, active_subject_name, is_cir)
         
-        # 2. Update Layout Text
         aerial_txt_elem.text = formatted_text
         
         print(f"\nProcessing: {lyr.name}...")
-        print(f"CIR Mode: {is_cir} (Setting color to {'Yellow' if is_cir else 'Red'})")
         
         lyr.visible = True
         
-        # 3. Create PDF filename (stripping CIR)
         clean_pdf_name = re.sub(r'(?i)\bCIR\b', '', lyr.name).strip()
         clean_pdf_name = " ".join(clean_pdf_name.split())
         pdf_name = os.path.splitext(clean_pdf_name)[0] + ".pdf"
         pdf_path = os.path.join(os.getcwd(), pdf_name)
         
-        # 4. Export
         layout.exportToPDF(
             out_pdf=pdf_path,
             resolution=400,
@@ -136,12 +143,11 @@ for lyr in m.listLayers():
         lyr.visible = False
 
 # --- FINAL RESET ---
-# 1. Restore the text element to original value
 aerial_txt_elem.text = rst_txt
 
-# 2. Force the Subject Property back to RED one last time
+# FIXED: Now passing all 3 required arguments for the final reset
 print("\nFinalizing: Resetting Subject Property to Red...")
-update_subject_symbology(m, False)
+update_subject_symbology(m, active_subject_name, False)
 
 del p
 print("Finished")
