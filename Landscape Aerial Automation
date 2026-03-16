@@ -8,8 +8,8 @@ import os
 import re
 
 # --- User-defined variables ---
-LAYOUT_NAME = "AERIAL-PE-INDEXES" 
-MAP_FRAME_NAME = "PE HISTORIC AERIAL LIBRARY Map Frame"
+LAYOUT_NAME = "AERIAL-INDEX-LANDSCAPE" 
+MAP_FRAME_NAME = "PEI  HISTORICAL AERIAL RESOURCES Map Frame"
 # Added more options for subject property detection
 SUBJECT_LAYER_OPTIONS = ["Subject Property", "Subject", "SubjectProperty"]
 # ------------------------------
