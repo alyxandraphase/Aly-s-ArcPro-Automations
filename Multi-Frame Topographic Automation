@@ -1,0 +1,139 @@
+# Script for exporting multiple topographic frames
+# Updated 3/17/2026 
+
+import arcpy
+import re
+import os
+import time
+
+# --- 1. USER-DEFINED VARIABLES ---
+LAYOUT_NAME = "TOPOGRAPHIC"  
+MAP_FRAME_NAME = "Topographic Map Frame" 
+PARENT_GROUP_NAME = "Add topographic maps here"
+SUBJECT_LAYER_NAME = "Subject Property" 
+# ------------------------------
+
+# --- 2. HELPER FUNCTIONS ---
+def get_element(layout, name, backup_text):
+    elms = layout.listElements("TEXT_ELEMENT", name)
+    if elms: return elms[0]
+    all_elms = layout.listElements("TEXT_ELEMENT")
+    for e in all_elms:
+        if re.search(backup_text, e.text) and "Delete all these" not in e.text:
+            return e
+    return None
+
+def get_source_string(name):
+    name_str = str(name).upper()
+    if "TOPOVIEW" in name_str: return "USGS TopoView"
+    elif "TNM" in name_str: return "The National Map"
+    elif "HTMC" in name_str: return "Historic Topographic Map Collection"
+    elif "TNRIS" in name_str: return "TNRIS"
+    elif "TXDOT" in name_str: return "TXDOT"
+    elif "TM" in name_str: return "Thematic Mapper"
+    else: return "USGS Historical Topographic Map Explorer"
+
+def update_subject_symbology(map_obj, is_cir):
+    try:
+        lyr = map_obj.listLayers(SUBJECT_LAYER_NAME)[0]
+        lyr.visible = True # Ensure it is ON
+        cim_lyr = lyr.getDefinition('V3')
+        yellow = [255, 255, 0, 100] 
+        red = [255, 0, 0, 100]
+        target_color = yellow if is_cir else red
+        for symbol_layer in cim_lyr.renderer.symbol.symbol.symbolLayers:
+            if hasattr(symbol_layer, 'color'):
+                symbol_layer.color.values = target_color
+        lyr.setDefinition(cim_lyr)
+    except: pass
+
+def get_series_and_scale(lyr_name):
+    foo = re.findall(r'(\d{5})', lyr_name)
+    scale_val = foo[0] if foo else "24000"
+    new_scale = 12000 
+    if scale_val in ["62500", "50000"]: new_scale = 24000
+    elif scale_val in ["250000", "125000", "100000"]: new_scale = 48000
+    series_dict = {"24000":"7.5", "25000":"7.5", "31680":"7.5", "50000":"15", "62500":"15"}
+    return new_scale, series_dict.get(scale_val, "7.5")
+
+# --- 3. MAIN LOGIC ---
+p = arcpy.mp.ArcGISProject("CURRENT")
+layout = p.listLayouts(LAYOUT_NAME)[0]
+mf = layout.listElements("MAPFRAME_ELEMENT", MAP_FRAME_NAME)[0]
+m = mf.map
+
+year_txt_elem = get_element(layout, "YEAR_TEXT", "YEAR")
+topo_txt_elem = get_element(layout, "SERIES_TEXT", "Topographic Series")
+src_txt_elem = get_element(layout, "Dynamic_Source", "Source:")
+
+# 1. Reset visibility but PROTECT the Subject Property
+print("Initializing visibility...")
+for lyr in m.listLayers():
+    if lyr.name == SUBJECT_LAYER_NAME:
+        lyr.visible = True
+    else:
+        lyr.visible = False
+
+parent_group = next((l for l in m.listLayers() if l.name == PARENT_GROUP_NAME), None)
+
+if parent_group and year_txt_elem:
+    # Find all direct children of the parent group
+    p_path = parent_group.longName + "\\"
+    direct_children = [l for l in parent_group.listLayers() 
+                       if l.longName.startswith(p_path) 
+                       and l.longName.replace(p_path, "").count("\\") == 0]
+    
+    for item in direct_children:
+        parent_group.visible = True
+        item.visible = True
+        
+        quad_info = []
+        source_list = []
+        has_cir = False
+        
+        # Determine if we are looking at a Group or a Single Layer
+        sub_items = item.listLayers() if item.isGroupLayer else [item]
+        
+        # If it's a group, we need to make sure the sub-layers are also ON
+        for lyr in sub_items:
+            lyr.visible = True 
+            if lyr.isGroupLayer: continue
+            
+            if "CIR" in lyr.name.upper(): has_cir = True
+            
+            parts = lyr.name.split('_')
+            if len(parts) >= 2:
+                quad_info.append(f"{parts[1].replace('-', ' ')}, {parts[0]}")
+                source_list.append(get_source_string(lyr.name))
+        
+        if quad_info:
+            print(f"Processing: {item.name}...")
+            
+            # Update Text
+            year_txt_elem.text = " ;\n".join(sorted(list(set(quad_info)))) + "."
+            unique_sources = sorted(list(set(source_list)))
+            src_txt_elem.text = "Source: " + "; ".join(unique_sources)
+            
+            # Get settings from the first actual data layer
+            sample_lyr = [l for l in sub_items if not l.isGroupLayer][0]
+            scale, series = get_series_and_scale(sample_lyr.name)
+            mf.camera.scale = scale
+            topo_txt_elem.text = f"USGS {series} Minute Topographic Series"
+            
+            # Update Subject Property
+            update_subject_symbology(m, has_cir)
+            
+            # Export (Removed the importDocument hack)
+            time.sleep(2) # Give it a moment to catch up
+            out_pdf = os.path.join(os.path.dirname(p.filePath), f"{item.name}.pdf")
+            layout.exportToPDF(out_pdf, resolution=150, image_quality="BEST", georef_info=True)
+            print(f"Exported {item.name}")
+            
+        # Turn off the item (and its children) before moving to next
+        item.visible = False 
+        if item.isGroupLayer:
+            for child in item.listLayers(): child.visible = False
+else:
+    print("Error: Parent group or layout elements missing.")
+
+print("Finished!")
