@@ -24,14 +24,30 @@ def get_element(layout, name, backup_text):
     return None
 
 def get_source_string(name):
+    # Convert to uppercase once to make all matching case-insensitive
     name_str = str(name).upper()
-    if "TOPOVIEW" in name_str: return "USGS TopoView"
-    elif "TNM" in name_str: return "The National Map"
-    elif "HTMC" in name_str: return "Historic Topographic Map Collection"
-    elif "TNRIS" in name_str: return "TNRIS"
-    elif "TXDOT" in name_str: return "TXDOT"
-    elif "TM" in name_str: return "Thematic Mapper"
-    else: return "USGS Historical Topographic Map Explorer"
+    
+    if "TOPOVIEW" in name_str: 
+        return "USGS TopoView"
+    elif "TNM" in name_str: 
+        return "The National Map"
+    elif "HTMC" in name_str: 
+        return "Historic Topographic Map Collection"
+    elif "TM" in name_str: 
+        return "Thematic Mapper"
+    elif "EARTHEXPLORER" in name_str: 
+        return "USGS Earth Explorer"
+    elif "TNRIS" in name_str: 
+        return "TNRIS"
+    elif "TXDOT" in name_str: 
+        return "TXDOT"
+    elif "HTME" in name_str: 
+        return "USGS Historical Topographic Map Explorer"
+    elif "TXU-PCLMAP" in name_str: 
+        return "UT Perry-Castañeda Library Map Collection"
+    else: 
+        print(f"Add new source for: {name}") 
+        return "ADD CORRECT SOURCE"
 
 def update_subject_symbology(map_obj, is_cir):
     try:
