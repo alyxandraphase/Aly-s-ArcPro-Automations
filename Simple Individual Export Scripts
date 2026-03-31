@@ -3,11 +3,19 @@ for lyt in aprx.listLayouts("AERIAL-PE-INDEXES"):
     lyt.exportToPDF(r"S:\Hold\202601034\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\Aerial 2025")
 
 aprx = arcpy.mp.ArcGISProject("CURRENT")
+for lyt in aprx.listLayouts("AERIAL-INDEX-LANDSCAPE"):
+    lyt.exportToPDF(r"S:\Hold\202601034\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\Aerial 2025")
+
+aprx = arcpy.mp.ArcGISProject("CURRENT")
 for lyt in aprx.listLayouts("TOPOGRAPHIC"):
     lyt.exportToPDF(r"S:\Hold\202601043 EDRR\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\Topo 2022")
 
 aprx = arcpy.mp.ArcGISProject("CURRENT")
 for lyt in aprx.listLayouts("Site-Sketch_Portrait"):
+    lyt.exportToPDF(r"S:\Hold\202601008\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\02-Site-Sketch-Portrait")
+
+aprx = arcpy.mp.ArcGISProject("CURRENT")
+for lyt in aprx.listLayouts("Site-Sketch_Landscape"):
     lyt.exportToPDF(r"S:\Hold\202601008\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\02-Site-Sketch-Portrait")
 
 
