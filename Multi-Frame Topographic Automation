@@ -138,7 +138,7 @@ if parent_group and year_txt_elem:
             print(f"Processing: {item.name}...")
             
             # Update Text
-            year_txt_elem.text = " ;\n".join(sorted(list(set(quad_info)))) + "."
+            year_txt_elem.text = " ;\n".join(sorted(list(set(quad_info)))) + " "
             unique_sources = sorted(list(set(source_list)))
             src_txt_elem.text = "Source: " + "; ".join(unique_sources)
             
