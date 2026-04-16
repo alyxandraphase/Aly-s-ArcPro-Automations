@@ -87,11 +87,21 @@ except IndexError:
 
 rst_txt = aerial_txt_elem.text 
 
+# --- BUG FIX: Create a list of 'Safe Layers' that actually support the .name property ---
+safe_layers = []
+for lyr in m.listLayers():
+    try:
+        _ = lyr.name 
+        safe_layers.append(lyr)
+    except AttributeError:
+        continue # Skip restricted layers
+
 # --- Detect which Subject Layer exists in the map ---
 active_subject_name = None
 lower_options = [opt.lower() for opt in SUBJECT_LAYER_OPTIONS]
 
-for lyr in m.listLayers():
+# Use safe_layers instead of m.listLayers()
+for lyr in safe_layers:
     if lyr.name.lower() in lower_options:
         active_subject_name = lyr.name
         break
@@ -103,16 +113,18 @@ if not active_subject_name:
 print(f"Using Subject Layer: {active_subject_name}")
 
 # Reset layer visibility initially (Keep Subject Property ON)
-for lyr in m.listLayers():
+for lyr in safe_layers:
     if not lyr.isGroupLayer:
         lyr.visible = True if lyr.name == active_subject_name else False
 
 # --- Main Export Loop ---
-for lyr in m.listLayers():
-    if lyr.isGroupLayer:
+for lyr in safe_layers:
+    if lyr.isGroupLayer or lyr.name == active_subject_name:
         continue
         
-    if "County Indexes" in lyr.longName or lyr.name == active_subject_name:
+    # Check for County Indexes using longName safely via getattr
+    lname = getattr(lyr, "longName", "")
+    if "County Indexes" in lname:
         continue
 
     formatted_text = format_aerial_text(lyr.name)
