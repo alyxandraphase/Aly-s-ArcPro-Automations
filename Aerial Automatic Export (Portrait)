@@ -2,7 +2,7 @@
 # Features automatic text updates for Year and Source based on layer names
 # Detects "CIR" to change Subject Property to Yellow, reverts to Red otherwise
 # Automatically skips the "County Indexes" group
-# Updated 3/16/2026
+# Updated 4/16/2026
 
 import arcpy
 import os
@@ -87,11 +87,22 @@ except IndexError:
 
 rst_txt = aerial_txt_elem.text 
 
+# --- BUG FIX: Safely filter layers to bypass restricted basemap/service sublayers ---
+safe_layers = []
+for lyr in m.listLayers():
+    try:
+        _ = lyr.name # Test if the name attribute is accessible
+        safe_layers.append(lyr)
+    except AttributeError:
+        # Skip this layer silently if it restricts property access
+        pass
+
 # --- Detect which Subject Layer exists in the map ---
 active_subject_name = None
 lower_options = [opt.lower() for opt in SUBJECT_LAYER_OPTIONS]
 
-for lyr in m.listLayers():
+# Use safe_layers instead of m.listLayers()
+for lyr in safe_layers:
     if lyr.name.lower() in lower_options:
         active_subject_name = lyr.name
         break
@@ -103,16 +114,19 @@ if not active_subject_name:
 print(f"Using Subject Layer: {active_subject_name}")
 
 # Reset layer visibility initially (Keep Subject Property ON)
-for lyr in m.listLayers():
+for lyr in safe_layers:
     if not lyr.isGroupLayer:
         lyr.visible = True if lyr.name == active_subject_name else False
 
 # --- Main Export Loop ---
-for lyr in m.listLayers():
+for lyr in safe_layers:
     if lyr.isGroupLayer:
         continue
         
-    if "County Indexes" in lyr.longName or lyr.name == active_subject_name:
+    # Safely get longName (fallback to name if longName isn't supported)
+    lyr_long_name = getattr(lyr, 'longName', lyr.name)
+        
+    if "County Indexes" in lyr_long_name or lyr.name == active_subject_name:
         continue
 
     formatted_text = format_aerial_text(lyr.name)
@@ -142,7 +156,7 @@ for lyr in m.listLayers():
             jpeg_compression_quality=85,
             georef_info=True
         )        
-
+        
         print(f"Exported: {pdf_name}")
         lyr.visible = False
 
