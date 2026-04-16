@@ -87,15 +87,18 @@ except IndexError:
 
 rst_txt = aerial_txt_elem.text 
 
-# --- BUG FIX: Safely filter layers to bypass restricted basemap/service sublayers ---
+# --- Main Script Logic ---
+# (After defining 'm' and 'aerial_txt_elem')
+
+# BUG FIX: Create a list of 'Safe Layers' that actually support the .name property
 safe_layers = []
 for lyr in m.listLayers():
     try:
-        _ = lyr.name # Test if the name attribute is accessible
+        # Check if we can access the name. If not, this triggers the AttributeError.
+        _ = lyr.name 
         safe_layers.append(lyr)
     except AttributeError:
-        # Skip this layer silently if it restricts property access
-        pass
+        continue # Skip the "locked" service/basemap layers
 
 # --- Detect which Subject Layer exists in the map ---
 active_subject_name = None
@@ -111,25 +114,24 @@ if not active_subject_name:
     print(f"ERROR: Could not find any layer named {SUBJECT_LAYER_OPTIONS}")
     exit()
 
-print(f"Using Subject Layer: {active_subject_name}")
-
-# Reset layer visibility initially (Keep Subject Property ON)
+# --- Reset layer visibility initially ---
 for lyr in safe_layers:
     if not lyr.isGroupLayer:
-        lyr.visible = True if lyr.name == active_subject_name else False
+        lyr.visible = (lyr.name == active_subject_name)
 
 # --- Main Export Loop ---
 for lyr in safe_layers:
-    if lyr.isGroupLayer:
+    if lyr.isGroupLayer or lyr.name == active_subject_name:
         continue
         
-    # Safely get longName (fallback to name if longName isn't supported)
-    lyr_long_name = getattr(lyr, 'longName', lyr.name)
-        
-    if "County Indexes" in lyr_long_name or lyr.name == active_subject_name:
+    # Check for County Indexes using longName safely
+    # longName can also occasionally fail on service layers, so we use getattr
+    lname = getattr(lyr, "longName", "")
+    if "County Indexes" in lname:
         continue
 
     formatted_text = format_aerial_text(lyr.name)
+    # ... (rest of your export logic remains the same)
     
     if formatted_text:
         is_cir = "CIR" in lyr.name.upper()
