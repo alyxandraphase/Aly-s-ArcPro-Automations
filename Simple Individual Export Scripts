@@ -16,7 +16,7 @@ for lyt in aprx.listLayouts("Site-Sketch_Portrait"):
 
 aprx = arcpy.mp.ArcGISProject("CURRENT")
 for lyt in aprx.listLayouts("Site-Sketch_Landscape"):
-    lyt.exportToPDF(r"S:\Hold\202601008\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\02-Site-Sketch-Portrait")
+    lyt.exportToPDF(r"S:\Hold\202601008\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\02-Site-Sketch-Landscape")
 
 
 
