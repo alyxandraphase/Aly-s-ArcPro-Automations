@@ -30,6 +30,7 @@ for lyt in aprx.listLayouts("Site-Sketch_Portrait"):
         image_compression="ADAPTIVE",
         jpeg_compression_quality=85
     )
+
 aprx = arcpy.mp.ArcGISProject("CURRENT")
 for lyt in aprx.listLayouts("Site-Sketch_Landscape"):
     lyt.exportToPDF(
