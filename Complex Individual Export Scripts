@@ -42,6 +42,16 @@ for lyt in aprx.listLayouts("Site-Sketch_Landscape"):
         jpeg_compression_quality=85
     )
 
+aprx = arcpy.mp.ArcGISProject("CURRENT")
+for lyt in aprx.listLayouts("Fire_Maps"):
+    lyt.exportToPDF(
+        r"S:\Hold\202607066\APPENDIX\APP I CURRENT AND HISTORICAL INFORMATION\Templates\_Harris County Wallace Zingery.pdf",
+        resolution=400,
+        image_quality="BETTER",
+        compress_vector_graphics=True,
+        image_compression="ADAPTIVE",
+        jpeg_compression_quality=85
+    )
 
 
 
