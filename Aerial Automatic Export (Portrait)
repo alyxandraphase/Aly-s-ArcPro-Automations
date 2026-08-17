@@ -1,8 +1,5 @@
 # Script to automatically generate PDFs from an ArcGIS Pro Layout for Aerial Images
-# Features automatic text updates for Year and Source based on layer names
-# Detects "CIR" to change Subject Property to Yellow, reverts to Red otherwise
-# Automatically skips the "County Indexes" group
-# Updated 4/16/2026
+# Updated 8/17/2026
 
 import arcpy
 import os
@@ -16,7 +13,28 @@ SUBJECT_LAYER_OPTIONS = [
     "Subject",
     "SubjectProperty"
 ]
+
+# NEW: Dictionary to map short names/acronyms to their full text
+SOURCE_MAPPING = {
+    "AMS": "Army Map Service",
+    "FSA": "Farm Service Agency",
+    "NASA": "NASA Johnson Space Center",
+    "AMES": "NASA AMES Research Center",
+    "USAF": "U.S. Air Force",
+    "NPS": "National Park Service",
+    "EROS": "EROS Miscellaneous",
+    "AFPO": "USDA-FSA-AFPO",
+    "TNRIS": "TNRIS Texas Orthoimagery Program (TOP)"
+}
 # ------------------------------
+
+def expand_acronyms(text):
+    """ Replaces acronyms in the text with their full names from SOURCE_MAPPING. """
+    for short_name, full_name in SOURCE_MAPPING.items():
+        # \b ensures we only replace whole words (e.g., won't change "WILLIAMS" to "WILLIArmy Map Service")
+        # (?i) makes the search case-insensitive
+        text = re.sub(fr'(?i)\b{re.escape(short_name)}\b', full_name, text)
+    return text
 
 def find_TEXT_ELEMENT(elm_list, srch):
     """ Finds a text element by searching its .text content (case-insensitive). """
@@ -26,7 +44,7 @@ def find_TEXT_ELEMENT(elm_list, srch):
     return None
 
 def format_aerial_text(lyr_name):
-    """ Parses 'YYYY Source', removes 'CIR' tag, and appends Aerial suffix. """
+    """ Parses 'YYYY Source', removes 'CIR' tag, maps acronyms, and appends Aerial suffix. """
     match = re.match(r'^(\d{4})\s+(.+)', lyr_name)
     if not match:
         return None
@@ -37,6 +55,9 @@ def format_aerial_text(lyr_name):
     # Clean "CIR" out of the text label
     clean_source = re.sub(r'(?i)\bCIR\b', '', source).strip()
     clean_source = " ".join(clean_source.split())
+    
+    # NEW: Expand any acronyms in the source name
+    clean_source = expand_acronyms(clean_source)
     
     if re.search("(?i)Nearmap", clean_source):
         return f"{year} {clean_source} Aerial Imagery"
@@ -87,9 +108,6 @@ except IndexError:
 
 rst_txt = aerial_txt_elem.text 
 
-# --- Main Script Logic ---
-# (After defining 'm' and 'aerial_txt_elem')
-
 # BUG FIX: Create a list of 'Safe Layers' that actually support the .name property
 safe_layers = []
 for lyr in m.listLayers():
@@ -131,7 +149,6 @@ for lyr in safe_layers:
         continue
 
     formatted_text = format_aerial_text(lyr.name)
-    # ... (rest of your export logic remains the same)
     
     if formatted_text:
         is_cir = "CIR" in lyr.name.upper()
@@ -146,6 +163,10 @@ for lyr in safe_layers:
         
         clean_pdf_name = re.sub(r'(?i)\bCIR\b', '', lyr.name).strip()
         clean_pdf_name = " ".join(clean_pdf_name.split())
+        
+        # NEW: Expand acronyms in the PDF filename so it matches the layout text
+        clean_pdf_name = expand_acronyms(clean_pdf_name)
+        
         pdf_name = os.path.splitext(clean_pdf_name)[0] + ".pdf"
         pdf_path = os.path.join(os.getcwd(), pdf_name)
         
