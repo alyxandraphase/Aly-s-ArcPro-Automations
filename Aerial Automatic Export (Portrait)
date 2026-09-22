@@ -1,5 +1,5 @@
 # Script to automatically generate PDFs from an ArcGIS Pro Layout for Aerial Images
-# Updated 8/17/2026
+# Updated 9/21/2026 
 
 import arcpy
 import os
@@ -13,8 +13,9 @@ SUBJECT_LAYER_OPTIONS = [
     "Subject",
     "SubjectProperty"
 ]
+FINAL_PDF_NAME = "03-AERIALS.pdf"
 
-# NEW: Dictionary to map short names/acronyms to their full text
+# Dictionary to map short names/acronyms to their full text
 SOURCE_MAPPING = {
     "AMS": "Army Map Service",
     "FSA": "Farm Service Agency",
@@ -31,8 +32,6 @@ SOURCE_MAPPING = {
 def expand_acronyms(text):
     """ Replaces acronyms in the text with their full names from SOURCE_MAPPING. """
     for short_name, full_name in SOURCE_MAPPING.items():
-        # \b ensures we only replace whole words (e.g., won't change "WILLIAMS" to "WILLIArmy Map Service")
-        # (?i) makes the search case-insensitive
         text = re.sub(fr'(?i)\b{re.escape(short_name)}\b', full_name, text)
     return text
 
@@ -52,11 +51,8 @@ def format_aerial_text(lyr_name):
     year = match.group(1)
     source = match.group(2).strip()
     
-    # Clean "CIR" out of the text label
     clean_source = re.sub(r'(?i)\bCIR\b', '', source).strip()
     clean_source = " ".join(clean_source.split())
-    
-    # NEW: Expand any acronyms in the source name
     clean_source = expand_acronyms(clean_source)
     
     if re.search("(?i)Nearmap", clean_source):
@@ -93,6 +89,21 @@ def update_subject_symbology(map_obj, layer_name, is_cir):
 print("Starting Aerial PDF generation...")
 p = arcpy.mp.ArcGISProject("CURRENT")
 
+# --- Setup Master PDF ---
+final_pdf_path = os.path.join(os.getcwd(), FINAL_PDF_NAME)
+temp_pdf_path = os.path.join(os.getcwd(), "temp_aerial_export.pdf")
+
+# Remove the existing final PDF if it exists so we can write a fresh one
+if os.path.exists(final_pdf_path):
+    try:
+        os.remove(final_pdf_path)
+    except PermissionError:
+        print(f"ERROR: {FINAL_PDF_NAME} is currently open. Please close it and run the script again.")
+        exit()
+
+# Create the empty PDF document object
+pdf_doc = arcpy.mp.PDFDocumentCreate(final_pdf_path)
+
 try:
     layout = p.listLayouts(LAYOUT_NAME)[0]
     mf = layout.listElements("MAPFRAME_ELEMENT", wildcard=MAP_FRAME_NAME)[0]
@@ -108,21 +119,18 @@ except IndexError:
 
 rst_txt = aerial_txt_elem.text 
 
-# BUG FIX: Create a list of 'Safe Layers' that actually support the .name property
 safe_layers = []
 for lyr in m.listLayers():
     try:
-        # Check if we can access the name. If not, this triggers the AttributeError.
         _ = lyr.name 
         safe_layers.append(lyr)
     except AttributeError:
-        continue # Skip the "locked" service/basemap layers
+        continue 
 
 # --- Detect which Subject Layer exists in the map ---
 active_subject_name = None
 lower_options = [opt.lower() for opt in SUBJECT_LAYER_OPTIONS]
 
-# Use safe_layers instead of m.listLayers()
 for lyr in safe_layers:
     if lyr.name.lower() in lower_options:
         active_subject_name = lyr.name
@@ -142,8 +150,6 @@ for lyr in safe_layers:
     if lyr.isGroupLayer or lyr.name == active_subject_name:
         continue
         
-    # Check for County Indexes using longName safely
-    # longName can also occasionally fail on service layers, so we use getattr
     lname = getattr(lyr, "longName", "")
     if "County Indexes" in lname:
         continue
@@ -152,26 +158,17 @@ for lyr in safe_layers:
     
     if formatted_text:
         is_cir = "CIR" in lyr.name.upper()
-        # Pass all 3 arguments: Map, Layer Name, and CIR status
         update_subject_symbology(m, active_subject_name, is_cir)
         
         aerial_txt_elem.text = formatted_text
         
-        print(f"\nProcessing: {lyr.name}...")
+        print(f"Processing: {lyr.name}...")
         
         lyr.visible = True
         
-        clean_pdf_name = re.sub(r'(?i)\bCIR\b', '', lyr.name).strip()
-        clean_pdf_name = " ".join(clean_pdf_name.split())
-        
-        # NEW: Expand acronyms in the PDF filename so it matches the layout text
-        clean_pdf_name = expand_acronyms(clean_pdf_name)
-        
-        pdf_name = os.path.splitext(clean_pdf_name)[0] + ".pdf"
-        pdf_path = os.path.join(os.getcwd(), pdf_name)
-        
+        # Export to a temporary PDF file
         layout.exportToPDF(
-            out_pdf=pdf_path,
+            out_pdf=temp_pdf_path,
             resolution=400,
             image_quality="BETTER",
             compress_vector_graphics=True,
@@ -180,15 +177,23 @@ for lyr in safe_layers:
             georef_info=True
         )        
         
-        print(f"Exported: {pdf_name}")
+        # Append the temporary PDF to the master document
+        pdf_doc.appendPages(temp_pdf_path)
+        print(f" -> Appended to {FINAL_PDF_NAME}")
+        
         lyr.visible = False
 
-# --- FINAL RESET ---
+# --- FINAL RESET & CLEANUP ---
 aerial_txt_elem.text = rst_txt
-
-# FIXED: Now passing all 3 required arguments for the final reset
 print("\nFinalizing: Resetting Subject Property to Red...")
 update_subject_symbology(m, active_subject_name, False)
 
+# Save the final compiled PDF
+pdf_doc.saveAndClose()
+
+# Delete the temporary export file
+if os.path.exists(temp_pdf_path):
+    os.remove(temp_pdf_path)
+
 del p
-print("Finished")
+print(f"Finished. All aerials have been compiled into {FINAL_PDF_NAME}")
