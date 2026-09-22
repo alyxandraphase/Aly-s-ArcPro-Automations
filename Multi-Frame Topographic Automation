@@ -1,5 +1,5 @@
 # Script for exporting multiple topographic frames
-# Updated 4/9/2026 
+# Updated 9/21/2026 (Modified to append all exports into a single 05-TOPOGRAPHICS.pdf)
 
 import arcpy
 import re
@@ -11,6 +11,7 @@ LAYOUT_NAME = "TOPOGRAPHIC"
 MAP_FRAME_NAME = "Topographic Map Frame" 
 PARENT_GROUP_NAME = "Add topographic maps here"
 SUBJECT_LAYER_NAME = "Subject Property" 
+FINAL_PDF_NAME = "05-TOPOGRAPHICS.pdf"
 # ------------------------------
 
 # --- 2. HELPER FUNCTIONS ---
@@ -90,6 +91,22 @@ layout = p.listLayouts(LAYOUT_NAME)[0]
 mf = layout.listElements("MAPFRAME_ELEMENT", MAP_FRAME_NAME)[0]
 m = mf.map
 
+# --- Setup Master PDF ---
+output_dir = os.path.dirname(p.filePath)
+final_pdf_path = os.path.join(output_dir, FINAL_PDF_NAME)
+temp_pdf_path = os.path.join(output_dir, "temp_topo_export.pdf")
+
+# Remove the existing final PDF if it exists
+if os.path.exists(final_pdf_path):
+    try:
+        os.remove(final_pdf_path)
+    except PermissionError:
+        print(f"ERROR: {FINAL_PDF_NAME} is currently open. Please close it and run the script again.")
+        exit()
+
+# Create the empty PDF document object
+pdf_doc = arcpy.mp.PDFDocumentCreate(final_pdf_path)
+
 year_txt_elem = get_element(layout, "YEAR_TEXT", "YEAR")
 topo_txt_elem = get_element(layout, "SERIES_TEXT", "Topographic Series")
 src_txt_elem = get_element(layout, "Dynamic_Source", "Source:")
@@ -151,11 +168,13 @@ if parent_group and year_txt_elem:
             # Update Subject Property
             update_subject_symbology(m, has_cir)
             
-            # Export (Removed the importDocument hack)
+            # Export to temporary PDF
             time.sleep(2) # Give it a moment to catch up
-            out_pdf = os.path.join(os.path.dirname(p.filePath), f"{item.name}.pdf")
-            layout.exportToPDF(out_pdf, resolution=150, image_quality="BEST", georef_info=True)
-            print(f"Exported {item.name}")
+            layout.exportToPDF(temp_pdf_path, resolution=150, image_quality="BEST", georef_info=True)
+            
+            # Append temporary PDF to master PDF
+            pdf_doc.appendPages(temp_pdf_path)
+            print(f" -> Appended to {FINAL_PDF_NAME}")
             
         # Turn off the item (and its children) before moving to next
         item.visible = False 
@@ -164,4 +183,13 @@ if parent_group and year_txt_elem:
 else:
     print("Error: Parent group or layout elements missing.")
 
-print("Finished!")
+# --- FINAL CLEANUP ---
+# Save and close the master PDF
+pdf_doc.saveAndClose()
+
+# Delete the temporary export file
+if os.path.exists(temp_pdf_path):
+    os.remove(temp_pdf_path)
+
+del p
+print(f"Finished! All topographic maps compiled into {FINAL_PDF_NAME}")
